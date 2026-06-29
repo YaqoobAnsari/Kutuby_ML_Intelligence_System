@@ -13,10 +13,20 @@ import type { AttemptOutcome, AttemptType } from '@/types/domain';
  * word confidence are DIFFERENT scales and must never be pooled.
  */
 export interface EnrichedAttempt {
+  /** Attempt row id. */
+  id: string;
+  /** Child uuid (used for leakage-free dataset splits). */
+  childId: string;
+  /** Session grouping retries within a lesson step. */
+  sessionId: string;
+  /** 1-based attempt index within the session. */
+  attemptNumber: number;
   /** Letter or word. */
   attemptType: AttemptType;
   /** Canonical target (letter label like `Alif`, or the word string). */
   target: string;
+  /** UI glyph/word shown to the child, if captured. */
+  targetDisplay: string | null;
   /** Raw is_correct. */
   isCorrect: boolean | null;
   /** Derived outcome. */
@@ -58,8 +68,13 @@ export interface EnrichedAttempt {
 }
 
 const RowSchema = z.object({
+  id: z.string(),
+  child_id: z.string(),
+  session_id: z.string(),
+  attempt_number: z.number(),
   attempt_type: z.string(),
   target_sent_to_api: z.string(),
+  target_display: z.string().nullable(),
   is_correct: z.boolean().nullable(),
   model_output: z.unknown(),
   client_context: z.unknown(),
@@ -68,7 +83,7 @@ const RowSchema = z.object({
 });
 
 const SELECT =
-  'attempt_type,target_sent_to_api,is_correct,model_output,client_context,audio_storage_path,recorded_at';
+  'id,child_id,session_id,attempt_number,attempt_type,target_sent_to_api,target_display,is_correct,model_output,client_context,audio_storage_path,recorded_at';
 const READ_PAGE = 1000;
 const MAX_ROWS = 500_000;
 
@@ -100,8 +115,13 @@ function toEnriched(raw: z.infer<typeof RowSchema>): EnrichedAttempt {
   const ctx = rec(raw.client_context);
   const extraction = rec(mo.extraction_metadata);
   return {
+    id: raw.id,
+    childId: raw.child_id,
+    sessionId: raw.session_id,
+    attemptNumber: raw.attempt_number,
     attemptType: raw.attempt_type === 'letter' ? 'letter' : 'word',
     target: raw.target_sent_to_api,
+    targetDisplay: raw.target_display,
     isCorrect: raw.is_correct,
     outcome: outcomeFromIsCorrect(raw.is_correct),
     predictedLetter: str(mo.predicted_letter),
