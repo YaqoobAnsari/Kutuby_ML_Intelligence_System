@@ -2,8 +2,13 @@
 
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
-import { CalendarRange } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { RefreshButton } from '@/components/layout/refresh-button';
+
+/** Props for the {@link Topbar}. */
+export interface TopbarProps {
+  /** ISO timestamp of when the server last rendered this view (data freshness). */
+  updatedAt: string;
+}
 
 /** Maps each section route prefix to a human-readable page-context label. */
 const SECTION_LABELS: ReadonlyArray<readonly [string, string]> = [
@@ -23,10 +28,10 @@ function sectionLabel(pathname: string): string {
 }
 
 /**
- * Sticky page header bar: current page context on the left and a (not-yet-wired)
- * date-range affordance on the right. Internal dashboard — no auth/identity.
+ * Sticky page header bar: current page context on the left; a data-freshness
+ * timestamp and a manual refresh on the right. Internal dashboard — no auth.
  */
-export function Topbar(): React.ReactElement {
+export function Topbar({ updatedAt }: TopbarProps): React.ReactElement {
   const pathname = usePathname();
 
   return (
@@ -42,16 +47,10 @@ export function Topbar(): React.ReactElement {
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled
-          title="Global date-range filter ships with Dataset Explorer (Phase 2)"
-          className="gap-2"
-        >
-          <CalendarRange className="h-4 w-4" />
-          <span>Last 30 days</span>
-        </Button>
+        <span className="hidden text-xs text-muted-foreground sm:inline">
+          Updated {updatedAt.slice(11, 16)} UTC
+        </span>
+        <RefreshButton />
       </div>
     </header>
   );
