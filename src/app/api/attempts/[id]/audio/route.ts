@@ -8,25 +8,52 @@ import {
 import { createServiceClient } from '@/lib/supabase/service';
 import { TABLE } from '@/types/database';
 
-/** Always run dynamically; audio is streamed per-request, never cached. */
+/** Always run dynamically; audio is served per-request, never cached. */
 export const dynamic = 'force-dynamic';
 
 /** Tolerant shape for the single column we read from the attempts table. */
 const AudioPathRow = z.object({ audio_storage_path: z.string().nullable() });
 
-/** Headers worth forwarding from the storage response to the client. */
-const PASSTHROUGH_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+/**
+ * Resolve an HTTP `Range` header against a known total size.
+ * Handles `bytes=N-M`, `bytes=N-`, and suffix `bytes=-S`.
+ * @returns The inclusive `[start, end]` byte range, or `null` when the header is
+ *          absent/unparseable/unsatisfiable (caller serves the full body).
+ */
+function resolveRange(header: string | null, total: number): { start: number; end: number } | null {
+  if (!header) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+  const hasStart = match[1] !== '';
+  const hasEnd = match[2] !== '';
+  if (!hasStart && !hasEnd) return null;
+
+  let start: number;
+  let end: number;
+  if (!hasStart) {
+    start = Math.max(0, total - Number(match[2]));
+    end = total - 1;
+  } else {
+    start = Number(match[1]);
+    end = hasEnd ? Math.min(Number(match[2]), total - 1) : total - 1;
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= total) {
+    return null;
+  }
+  return { start, end };
+}
 
 /**
- * GET `/api/attempts/[id]/audio` — stream an attempt's recording from OUR origin.
+ * GET `/api/attempts/[id]/audio` — serve an attempt's recording from OUR origin.
  *
- * Rather than handing the browser a cross-origin Supabase signed URL (which can
- * be blocked by privacy/ad blockers and complicates autoplay), this proxies the
- * bytes through the dashboard's own origin. The service key stays server-side;
- * `Range` requests are forwarded so the `<audio>` element can seek.
+ * The file is fetched once with the server-side service key and returned as a
+ * fully-buffered body with an exact `Content-Length` (no chunked encoding, which
+ * some browsers refuse to decode for media) and proper `Range`/`206` support so
+ * the `<audio>` element can seek. No cross-origin request reaches the browser.
  *
- * @returns The audio bytes (`200`/`206`, `audio/wav`); `404` when there is no
- *          audio; `502` on lookup/upstream failure.
+ * @returns Audio bytes (`200`/`206`, `audio/wav`); `404` (no audio) or `502`
+ *          (lookup/upstream failure).
  */
 export async function GET(
   request: NextRequest,
@@ -50,38 +77,53 @@ export async function GET(
     return NextResponse.json({ error: 'no_audio' }, { status: 404 });
   }
 
-  // Encode each path segment but keep the slash separators.
   const encodedPath = parsed.data.audio_storage_path
     .split('/')
     .map(encodeURIComponent)
     .join('/');
-  const upstreamUrl = `${SUPABASE_URL}/storage/v1/object/authenticated/${SUPABASE_STORAGE_BUCKET}/${encodedPath}`;
-
-  const range = request.headers.get('range');
-  const upstream = await fetch(upstreamUrl, {
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      ...(range ? { Range: range } : {}),
+  const upstream = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/authenticated/${SUPABASE_STORAGE_BUCKET}/${encodedPath}`,
+    {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      cache: 'no-store',
     },
-    cache: 'no-store',
-  });
-
-  if (!upstream.ok && upstream.status !== 206) {
+  );
+  if (!upstream.ok) {
     return NextResponse.json(
       { error: 'upstream_failed', status: upstream.status },
       { status: 502 },
     );
   }
 
-  const headers = new Headers();
-  for (const name of PASSTHROUGH_HEADERS) {
-    const value = upstream.headers.get(name);
-    if (value) headers.set(name, value);
-  }
-  if (!headers.has('content-type')) headers.set('content-type', 'audio/wav');
-  if (!headers.has('accept-ranges')) headers.set('accept-ranges', 'bytes');
-  headers.set('cache-control', 'no-store');
+  const full = new Uint8Array(await upstream.arrayBuffer());
+  const total = full.length;
+  const contentType = upstream.headers.get('content-type') ?? 'audio/wav';
 
-  return new NextResponse(upstream.body, { status: upstream.status, headers });
+  const range = resolveRange(request.headers.get('range'), total);
+  if (range) {
+    const chunk = full.slice(range.start, range.end + 1);
+    return new NextResponse(chunk, {
+      status: 206,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(chunk.length),
+        'Content-Range': `bytes ${range.start}-${range.end}/${total}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
+  return new NextResponse(full, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(total),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store',
+    },
+  });
 }
