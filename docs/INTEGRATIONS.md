@@ -21,6 +21,18 @@
 | `arabic-letters-api`| Arabic letters (Wav2Vec-based)     | `POST …/verify_letter`        | `letter`       |
 | `arabic-words-api`  | Quranic words (Tarteel fine-tuned) | `POST …/verify_word`          | `word`         |
 
+### Service URLs & consoles
+
+**Quranic words** (`arabic-words-api`):
+- Live API: `https://arabic-words-api-d26k2plh4q-ew.a.run.app` — `POST /verify_word`, health `GET /health` (returns `variant`/`model_name`).
+- Cloud Run console: `https://console.cloud.google.com/run/detail/europe-west1/arabic-words-api/metrics?project=organic-duality-484219-p5`
+- Model: **Tarteel** `tarteel-ai/whisper-base-ar-quran` (`MODEL_VARIANT=tarteel`), **baked into the container image** at build — no runtime GCS model bucket.
+
+**Arabic letters** (`arabic-letters-api`):
+- Live API: `https://arabic-letters-api-d26k2plh4q-ew.a.run.app` — `POST /verify_letter`; no `/health` (use `GET /`).
+- Cloud Run console: `https://console.cloud.google.com/run/detail/europe-west1/arabic-letters-api/metrics?project=organic-duality-484219-p5`
+- Model: 28-class Wav2Vec2, loaded at runtime from GCS bucket `kutuby-arabic-letters-models`.
+
 ### Response payloads (recorded into `model_output`)
 
 - **`verify_letter`** → `result`(bool), `predicted_letter`,
