@@ -98,10 +98,11 @@ export default async function OverviewPage(): Promise<ReactElement> {
 
         <Card>
           <CardHeader>
-            <CardTitle>Daily practice volume</CardTitle>
+            <CardTitle>Outcomes by day</CardTitle>
             <CardDescription>
-              Total attempts per day, bucketed on recorded_at (when children
-              practiced).
+              Pass / fail / error per day (UTC), bucketed on recorded_at. Stack
+              height is total attempts; hover for the per-day breakdown. A
+              dominant red band means most attempts are failing.
             </CardDescription>
           </CardHeader>
           <CardContent>

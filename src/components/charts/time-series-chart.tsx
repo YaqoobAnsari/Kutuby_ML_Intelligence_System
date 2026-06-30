@@ -43,6 +43,8 @@ export interface TimeSeriesChartProps<T extends object> {
   xTickFormatter?: (value: string) => string;
   /** Format a y-axis tick and tooltip value. */
   valueFormatter?: (value: number) => string;
+  /** Stack area series into a cumulative band (stack height = total). */
+  stacked?: boolean;
   /** Additional classes for the wrapper. */
   className?: string;
 }
@@ -64,6 +66,7 @@ export function TimeSeriesChart<T extends object>({
   height = 280,
   xTickFormatter,
   valueFormatter,
+  stacked = false,
   className,
 }: TimeSeriesChartProps<T>): React.ReactElement {
   // Stable, collision-free gradient id prefix for this chart instance.
@@ -148,7 +151,9 @@ export function TimeSeriesChart<T extends object>({
               name={s.label}
               stroke={s.color}
               strokeWidth={2}
-              fill={`url(#${gradientId}-${s.key})`}
+              fill={stacked ? s.color : `url(#${gradientId}-${s.key})`}
+              fillOpacity={stacked ? 0.7 : 1}
+              stackId={stacked ? 'stack' : undefined}
               dot={false}
               activeDot={{ r: 3 }}
             />
